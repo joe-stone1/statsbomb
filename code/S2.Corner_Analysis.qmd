@@ -1,0 +1,1021 @@
+---
+title: "S2_d2_corner"
+format: html
+editor: visual
+---
+
+# Statsbomb Data
+
+# Section 1- Importing Data
+
+Here we have two options (A & C) for importing data into this script: Part-A: Import directly from Statsbombs Free Data Sets (this requires the linked statsbomb packages to be installed). Part-B- Import extra data directly from Statsbombs using their 360 data set Part-C: Imports data using csv file that JS has made available (note you will need to have saved this csv file to a folder on your computer). This option has the advantage of not requiring the StatsBombR package to be installed. But losing a small amount of event data and does not work with 360 data.
+
+## Part A: Importing Data via Statsbomb API
+
+Please note you need to have installed the StatsbombR package prior to using this code. Info can be found here: https://statsbomb.com/wp-content/uploads/2021/11/Working-with-R.pdf
+
+First we load the packages needed for the code tidyverse loads many different packages, for this code it include dplyr and magrittr. StatsBombR loads StatsBombR which is required to import their data.
+
+```{r}
+#load packages 
+library(tidyverse)
+library(StatsBombR)
+```
+
+##Loading Statsbomb Data into R Studio
+
+This loads the free competitions data and shows which data is available. See the document "Free Data Competition ID" which shows what the Competition ID and Season ID refer to.
+
+```{r}
+df_comp <- FreeCompetitions() # df = dataframe
+df_comp
+```
+
+Here, we select the women world cup from 2023 as our data set. We define the dataframe as df_world_cup. We also import the matches from the competition (df_matches) and the event data (df_events).
+
+```{r}
+df_world_cup <- FreeCompetitions() %>% 
+  filter(competition_id==72 & season_id==107) #use the Comp df to get the id vaules
+df_matches <- FreeMatches(df_world_cup)
+df_events <- free_allevents(MatchesDF = df_matches, Parallel = T) #this imports the event data
+```
+
+```{r}
+#this uses a statsbomb function to clean the data and creates/adds some useful extra columns of data based on the orignal data set. 
+df_events <- StatsBombR::allclean(df_events)
+```
+
+If you require 360 data move to Part B. If not, you are now ready to move to Section 2: Working with Data.
+
+##Part-B:Importing 360 Data
+
+This set of code adds some extra data from Statsbomb called 360. This provides all players positions during actions in the data set. Here we define the final data set at df_360_events which can be used in future work. Please note, this may not work if you are importing the data directly from CSV.
+
+```{r}
+comp <- FreeCompetitions() %>% 
+  filter(competition_id==72 & season_id==107) #women world cup 23
+matches <- FreeMatches(comp)
+df360 <- free_allevents_360(MatchesDF = matches, Parallel = T)
+```
+
+```{r}
+#load events data 
+df <- free_allevents(MatchesDF = matches, Parallel = T)
+df <- allclean(df)
+df <- get.opposingteam(df)
+```
+
+```{r}
+df360 = df360 %>% rename(id = event_uuid)
+df = df %>% left_join(df360, by = c("id" = "id"))
+df = df %>% rename(match_id = match_id.x) %>% select(-match_id.y)
+df_360_events <- df
+```
+
+If this code has run successfully you are now ready to start working with the data in R. You can move to Section 2: Working with Data.
+
+##Part C: Importing data from csv
+
+Please note, if you have completed Part A and/or B you do not need to run the code below.
+
+```{r}
+#load packages (note please install packages if you don't have them installed)
+library(here)
+library(tidyverse)
+```
+
+```{r}
+df_events <- here::here("data/world23_events.csv") %>% readr::read_csv() #this will import the saved statsbomb csv files. If this does not work, first check if yiur file path is correct and that you have the csv file saved in an approporiate fodlder. 
+df_matches <- here::here("data/world23_matches.csv") %>% readr::read_csv()
+```
+
+If this code has run successfully you are now ready to start working with the data in R. You can move to Section 2: Working with Data.
+
+## Clean the df and adding columns of data for analysis
+
+# Section 2.1: Corner Kick Example
+
+## Part-A: Preparing the dataset
+
+This section creates some extra columns of data which will be useful in the later analysis.
+
+```{r}
+#Cleans data and selects the sub-set pattern of play, corner creating a dataframe (df)
+df_corner <-subset(df_events, play_pattern.name=="From Corner")
+```
+
+```{r}
+#adds a specific id for each corner
+df_corner$setpiece.id <- paste(df_corner$match_id, df_corner$possession, sep = "") 
+```
+
+```{r}
+#This gives only the first row of data for each possession or set piece action. This is useful as you can then calculate the corner kick action easier with a reduced data set. 
+dfrow1 <- df_corner %>% filter(pass.type.name=="Corner") #change based on set piece of interest
+```
+
+```{r}
+#creates a column to say if the corner was from the left or right. This helps when defining pitch locations below. 
+dfrow1$corner.side <- ifelse(dfrow1$location.y<1, "left", "right") 
+```
+
+```{r}
+#this spilts the df into two, left and right corners. this allows us to create specific location for each corner. 
+dfr <- dfrow1 %>% filter(corner.side=="right")
+dfl <- dfrow1 %>% filter(corner.side=="left")
+```
+
+```{r}
+#creates corner location for left side corners based on Beare and Stone 2019
+dfl$pitch.loc <- 
+  ifelse(dfl$pass.end_location.x>114 & dfl$pass.end_location.x<=120 & dfl$pass.end_location.y>36 & dfl$pass.end_location.y<=44, "GA2", 
+  ifelse(dfl$pass.end_location.x>108 & dfl$pass.end_location.x<=114 & dfl$pass.end_location.y>36 & dfl$pass.end_location.y<=44, "CA2", 
+  ifelse(dfl$pass.end_location.x>114 & dfl$pass.end_location.x<=120 & dfl$pass.end_location.y>30 & dfl$pass.end_location.y<=36, "GA1",
+  ifelse(dfl$pass.end_location.x>108 & dfl$pass.end_location.x<=114 & dfl$pass.end_location.y>30 & dfl$pass.end_location.y<=36, "CA1",
+  ifelse(dfl$pass.end_location.x>114 & dfl$pass.end_location.x<=120 & dfl$pass.end_location.y>44 & dfl$pass.end_location.y<=50, "GA3", 
+  ifelse(dfl$pass.end_location.x>108 & dfl$pass.end_location.x<=114 & dfl$pass.end_location.y>44 & dfl$pass.end_location.y<=50, "CA3", 
+  ifelse(dfl$pass.end_location.x>102 & dfl$pass.end_location.x<=120 & dfl$pass.end_location.y>18 & dfl$pass.end_location.y<=30,"Front_Zone",
+  ifelse(dfl$pass.end_location.x>102 & dfl$pass.end_location.x<=120 & dfl$pass.end_location.y>50 & dfl$pass.end_location.y<=62, "Back_Zone", 
+  ifelse(dfl$pass.end_location.x>60 & dfl$pass.end_location.x<=102 & dfl$pass.end_location.y>0 & dfl$pass.end_location.y<=80, "outside_box",
+  ifelse(dfl$pass.end_location.x>102 & dfl$pass.end_location.x<=120 & dfl$pass.end_location.y>0 & dfl$pass.end_location.y<=18, "short",
+  ifelse(dfl$pass.end_location.x>102 & dfl$pass.end_location.x<=120 & dfl$pass.end_location.y>62 & dfl$pass.end_location.y<=80, "long",
+  ifelse(dfl$pass.end_location.x>102 & dfl$pass.end_location.x<=108 & dfl$pass.end_location.y>36 & dfl$pass.end_location.y<=44, "Edge","NA"))))))))))))
+```
+
+```{r}
+#pitch loc for right side
+dfr$pitch.loc <- 
+  ifelse(dfr$pass.end_location.x>114 & dfr$pass.end_location.x<=120 & dfr$pass.end_location.y>36 & dfr$pass.end_location.y<=44, "GA2", 
+  ifelse(dfr$pass.end_location.x>108 & dfr$pass.end_location.x<=114 & dfr$pass.end_location.y>36 & dfr$pass.end_location.y<=44, "CA2", 
+  ifelse(dfr$pass.end_location.x>114 & dfr$pass.end_location.x<=120 & dfr$pass.end_location.y>30 & dfr$pass.end_location.y<=36, "GA3",
+  ifelse(dfr$pass.end_location.x>108 & dfr$pass.end_location.x<=114 & dfr$pass.end_location.y>30 & dfr$pass.end_location.y<=36, "CA3",
+  ifelse(dfr$pass.end_location.x>114 & dfr$pass.end_location.x<=120 & dfr$pass.end_location.y>44 & dfr$pass.end_location.y<=50, "GA1", 
+  ifelse(dfr$pass.end_location.x>108 & dfr$pass.end_location.x<=114 & dfr$pass.end_location.y>44 & dfr$pass.end_location.y<=50, "CA1", 
+  ifelse(dfr$pass.end_location.x>102 & dfr$pass.end_location.x<=120 & dfr$pass.end_location.y>18 & dfr$pass.end_location.y<=30,"Back_Zone",
+  ifelse(dfr$pass.end_location.x>102 & dfr$pass.end_location.x<=120 & dfr$pass.end_location.y>50 & dfr$pass.end_location.y<=62, "Front_Zone", 
+  ifelse(dfr$pass.end_location.x>60 & dfr$pass.end_location.x<=102 & dfr$pass.end_location.y>0 & dfr$pass.end_location.y<=80, "outside_box",
+  ifelse(dfr$pass.end_location.x>102 & dfr$pass.end_location.x<=120 & dfr$pass.end_location.y>0 & dfr$pass.end_location.y<=18, "long",
+  ifelse(dfr$pass.end_location.x>102 & dfr$pass.end_location.x<=120 & dfr$pass.end_location.y>62 & dfr$pass.end_location.y<=80, "short",
+  ifelse(dfr$pass.end_location.x>102 & dfr$pass.end_location.x<=108 & dfr$pass.end_location.y>36 & dfr$pass.end_location.y<=44, "Edge","NA"))))))))))))
+```
+
+```{r}
+#combines the left and right side corners back together again. 
+df_corner_action <- rbind(dfl, dfr)
+dfrow1 <- df_corner_action%>% filter(pass.type.name=="Corner")
+```
+
+## Part B-Summary Data: Corners- World Cup
+
+```{r}
+matches_per_team_home <- df_matches %>% #this is caluating how many matches each team played. 
+  dplyr::group_by(home_team.home_team_name) %>%
+    dplyr::summarise(
+    home_match_frequency = n())
+
+matches_per_team_away <- df_matches %>% 
+  dplyr::group_by(away_team.away_team_name) %>%
+    dplyr::summarise(
+    away_match_frequency = n()
+    )
+match_summary_new <- cbind(matches_per_team_away, matches_per_team_home)
+match_summary_new$match_sum <- match_summary_new$away_match_frequency + match_summary_new$home_match_frequency
+match_summary_new = select(match_summary_new, -"away_match_frequency", -"home_team.home_team_name", -"home_match_frequency")
+```
+
+```{r}
+summary_corner_tbl <- df_corner_action %>% #this code calculates how many corners each team had across the dataset
+  dplyr::group_by(team.name) %>%
+    dplyr::summarise(
+    corner_frequency = n()
+    )
+summary_corner_tbl <- cbind(match_summary_new, summary_corner_tbl)
+summary_corner_tbl = select(summary_corner_tbl, -"away_team.away_team_name")
+
+summary_corner_tbl = summary_corner_tbl %>% #this calculates the percentage of corners each team in relation to total corners taken 
+  mutate(percent = corner_frequency/sum(corner_frequency)*100) %>% 
+  mutate(across(c('percent'), round, 2))
+
+summary_corner_tbl = summary_corner_tbl %>% #this calculates the percentage of corners each team in relation to total corners taken 
+  mutate(corner_per_match = corner_frequency/match_sum) %>% 
+  mutate(across(c('corner_per_match'), round, 2))
+```
+
+## Shots from Corners
+
+```{r}
+df_shot <- df_corner %>% filter(type.name=="Shot") #this create a new dataframe with shots that results from a corner 
+dfshot_usa <- df_shot  %>% filter(team.name=="United States Women's")
+
+#calcuates each corner which resulted in a shot
+corner_shot_summary <- dfshot_usa %>%
+  dplyr::group_by(setpiece.id) %>%
+    dplyr::summarise(
+    shot_frequency = n()
+    )
+
+#creates a dataframe for corners which resulted in a shot
+df_shot_full_usa <- df_corner %>% filter (setpiece.id %in% corner_shot_summary$setpiece.id)
+df_shot_row1_usa <- df_shot_full_usa %>% filter(pass.type.name=="Corner")
+```
+
+# Xg from Corners
+
+```{r}
+shot_xg = select(df_shot, "team.name", "shot.statsbomb_xg")
+```
+
+```{r}
+SHOTS_xg_sum <- shot_xg %>%
+  dplyr::group_by(team.name) %>%
+  dplyr::summarise(
+      shot_xgsum = sum(shot.statsbomb_xg)
+    )
+```
+
+```{r}
+SHOTS_xg_sum_combined <- cbind(SHOTS_xg_sum,summary_corner_tbl$corner_frequency)
+colnames(SHOTS_xg_sum_combined) <- c("team.name", "shot_xgsum","corner_frequency")
+```
+
+```{r}
+SHOTS_xg_sum_combined = SHOTS_xg_sum_combined %>%
+  mutate(xg_per_corner = (shot_xgsum/corner_frequency))
+```
+
+***CREATE BAR CHART***
+
+## Summary Data- Corners- United States Women's
+
+```{r}
+dfrow1_usa <- dfrow1 %>% filter(team.name=="United States Women's") #here we can change this to any team name of interest
+```
+
+```{r}
+#calculates percentages for delivery locations 
+location <- dfrow1_usa %>%
+  dplyr::group_by(pitch.loc) %>%
+    dplyr::summarise(
+    frequency = n())
+
+location = location %>%
+  mutate(percent = frequency/sum(frequency)*100)
+```
+
+```{r}
+#calculates a summary of the technique of pass/corner
+technique <- dfrow1_usa %>%
+  dplyr::group_by(pass.technique.name) %>%
+    dplyr::summarise(
+    frequency = n()
+    )
+technique = technique %>%
+  mutate(percent = frequency/sum(frequency)*100)
+```
+
+```{r}
+#calculates a summary of the technique and pitch location together 
+technique_loc <- dfrow1_usa %>%
+  dplyr::group_by(pass.technique.name, pitch.loc) %>%
+    dplyr::summarise(
+    frequency = n()
+    )
+technique_loc = technique_loc %>%
+  mutate(percent = frequency/sum(frequency)*100)
+```
+
+##Vizulation of Tech and Loc
+
+```{r}
+#create dataframes for the figures based on light and right side with the tech of the corner. 
+chart_in_l <- dfrow1_usa %>% filter(pass.inswinging=="TRUE", location.y == 0.1)
+chart_in_r <- dfrow1_usa %>% filter(pass.inswinging=="TRUE", location.y == 80.0)
+chart_out_l <- dfrow1_usa %>% filter(pass.outswinging=="TRUE", location.y == 0.1)
+chart_out_r <- dfrow1_usa %>% filter(pass.outswinging=="TRUE", location.y == 80.0)
+chart_stra_l <- dfrow1_usa %>% filter(pass.straight=="TRUE", location.y == 0.1)
+chart_stra_r <- dfrow1_usa %>% filter(pass.straight=="TRUE", location.y == 80.0)
+```
+
+Creates figures using the df above. 
+```{r}
+#box with no ceternal line template 
+library(ggplot2)
+library(grid)
+
+tiff("/Users/joestone/Documents/r/r_projects/statsbomb/output/in_l.png", units="in", width=10, height=10, res=1000)
+
+ggplot() +
+    #plots data 
+geom_curve(data = chart_in_l, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y),
+lineend = "round", size = 0.6, curvature = 0.2, angle = 90, arrow = arrow(length = unit(0.08, "inches"))) +
+  
+annotate("rect",xmin = 0, xmax = 120, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 60, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 18, xmax = 0, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 102, xmax = 120, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 6, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 114, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 120.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = -0.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("segment", x = 60, xend = 60, y = -0.5, yend = 80.5, colour = "black", size = 0.6)+
+annotate("segment", x = 0, xend = 0, y = 0, yend = 80, colour = "black", size = 0.6)+
+annotate("segment", x = 120, xend = 120, y = 0, yend = 80, colour = "black", size = 0.6)+
+theme(rect = element_blank(),
+line = element_blank()) +
+# add penalty spot right
+annotate("point", x = 108 , y = 40, colour = "black", size = 1.05) +
+annotate("path", colour = "black", size = 0.6,
+x=60+10*cos(seq(0,2*pi,length.out=2000)),
+y=40+10*sin(seq(0,2*pi,length.out=2000)))+
+# add centre spot
+annotate("point", x = 60 , y = 40, colour = "black", size = 1.05) +
+annotate("path", x=12+10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40+10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+annotate("path", x=107.84-10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40-10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+theme(axis.text.x=element_blank(),
+axis.title.x = element_blank(),
+axis.title.y = element_blank(),
+plot.caption=element_text(face="bold", colour = "black", size=24, hjust= 0.5, vjust= 15),
+plot.subtitle = element_text(size = 18,  hjust = 0.5),
+axis.text.y=element_blank(),
+legend.position = "top",
+legend.title=element_text(size=14),
+legend.text=element_text(size=14),
+legend.margin = margin(c(20, 10, -65, 50)),
+legend.key.size = unit(1.5, "cm"),
+plot.title = element_text(margin = margin(r = 10, b = 10), face="bold",size = 24, colour = "black", hjust = 0.5),
+legend.direction = "horizontal",
+axis.ticks=element_blank(),
+aspect.ratio = c(65/100),
+plot.background = element_rect(fill = "white"),
+strip.text.x = element_text(size=13)) +
+labs(caption = "USA\n Left Inswinging") +
+coord_flip(xlim = c(85, 125))
+dev.off()
+```
+
+```{r}
+#box with no ceternal line template 
+library(ggplot2)
+library(grid)
+
+tiff("/Users/joestone/Documents/r/r_projects/statsbomb/output/in_r.png", units="in", width=10, height=10, res=1000)
+
+ggplot() +
+    #plots data 
+geom_curve(data = chart_in_r, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y),
+lineend = "round", size = 0.6, curvature = -0.2, angle = 90, arrow = arrow(length = unit(0.08, "inches"))) +
+  
+annotate("rect",xmin = 0, xmax = 120, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 60, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 18, xmax = 0, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 102, xmax = 120, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 6, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 114, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 120.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = -0.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("segment", x = 60, xend = 60, y = -0.5, yend = 80.5, colour = "black", size = 0.6)+
+annotate("segment", x = 0, xend = 0, y = 0, yend = 80, colour = "black", size = 0.6)+
+annotate("segment", x = 120, xend = 120, y = 0, yend = 80, colour = "black", size = 0.6)+
+theme(rect = element_blank(),
+line = element_blank()) +
+# add penalty spot right
+annotate("point", x = 108 , y = 40, colour = "black", size = 1.05) +
+annotate("path", colour = "black", size = 0.6,
+x=60+10*cos(seq(0,2*pi,length.out=2000)),
+y=40+10*sin(seq(0,2*pi,length.out=2000)))+
+# add centre spot
+annotate("point", x = 60 , y = 40, colour = "black", size = 1.05) +
+annotate("path", x=12+10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40+10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+annotate("path", x=107.84-10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40-10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+theme(axis.text.x=element_blank(),
+axis.title.x = element_blank(),
+axis.title.y = element_blank(),
+plot.caption=element_text(face="bold", colour = "black", size=24, hjust= 0.5, vjust= 15),
+plot.subtitle = element_text(size = 18,  hjust = 0.5),
+axis.text.y=element_blank(),
+legend.position = "top",
+legend.title=element_text(size=14),
+legend.text=element_text(size=14),
+legend.margin = margin(c(20, 10, -65, 50)),
+legend.key.size = unit(1.5, "cm"),
+plot.title = element_text(margin = margin(r = 10, b = 10), face="bold",size = 24, colour = "black", hjust = 0.5),
+legend.direction = "horizontal",
+axis.ticks=element_blank(),
+aspect.ratio = c(65/100),
+plot.background = element_rect(fill = "white"),
+strip.text.x = element_text(size=13)) +
+labs(caption = "USA\n Right Inswinging") +
+coord_flip(xlim = c(85, 125))
+dev.off()
+```
+
+```{r}
+#box with no ceternal line template 
+library(ggplot2)
+library(grid)
+
+tiff("/Users/joestone/Documents/r/r_projects/statsbomb/output/out_l.png", units="in", width=10, height=10, res=1000)
+
+ggplot() +
+    #plots data 
+geom_curve(data = chart_out_l, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y),
+lineend = "round", size = 0.6, curvature = -0.05, angle = 90, arrow = arrow(length = unit(0.08, "inches"))) +
+  
+annotate("rect",xmin = 0, xmax = 120, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 60, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 18, xmax = 0, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 102, xmax = 120, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 6, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 114, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 120.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = -0.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("segment", x = 60, xend = 60, y = -0.5, yend = 80.5, colour = "black", size = 0.6)+
+annotate("segment", x = 0, xend = 0, y = 0, yend = 80, colour = "black", size = 0.6)+
+annotate("segment", x = 120, xend = 120, y = 0, yend = 80, colour = "black", size = 0.6)+
+theme(rect = element_blank(),
+line = element_blank()) +
+# add penalty spot right
+annotate("point", x = 108 , y = 40, colour = "black", size = 1.05) +
+annotate("path", colour = "black", size = 0.6,
+x=60+10*cos(seq(0,2*pi,length.out=2000)),
+y=40+10*sin(seq(0,2*pi,length.out=2000)))+
+# add centre spot
+annotate("point", x = 60 , y = 40, colour = "black", size = 1.05) +
+annotate("path", x=12+10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40+10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+annotate("path", x=107.84-10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40-10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+theme(axis.text.x=element_blank(),
+axis.title.x = element_blank(),
+axis.title.y = element_blank(),
+plot.caption=element_text(face="bold", colour = "black", size=24, hjust= 0.5, vjust= 15),
+plot.subtitle = element_text(size = 18,  hjust = 0.5),
+axis.text.y=element_blank(),
+legend.position = "top",
+legend.title=element_text(size=14),
+legend.text=element_text(size=14),
+legend.margin = margin(c(20, 10, -65, 50)),
+legend.key.size = unit(1.5, "cm"),
+plot.title = element_text(margin = margin(r = 10, b = 10), face="bold",size = 24, colour = "black", hjust = 0.5),
+legend.direction = "horizontal",
+axis.ticks=element_blank(),
+aspect.ratio = c(65/100),
+plot.background = element_rect(fill = "white"),
+strip.text.x = element_text(size=13)) +
+labs(caption = "USA\n Left Outswinging") +
+coord_flip(xlim = c(85, 125))
+dev.off()
+```
+
+```{r}
+#box with no ceternal line template 
+library(ggplot2)
+library(grid)
+
+tiff("/Users/joestone/Documents/r/r_projects/statsbomb/output/out_r.png", units="in", width=10, height=10, res=1000)
+
+ggplot() +
+    #plots data 
+geom_curve(data = chart_out_r, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y),
+lineend = "round", size = 0.6, curvature = 0.05, angle = 90, arrow = arrow(length = unit(0.08, "inches"))) +
+  
+annotate("rect",xmin = 0, xmax = 120, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 60, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 18, xmax = 0, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 102, xmax = 120, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 6, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 114, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 120.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = -0.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("segment", x = 60, xend = 60, y = -0.5, yend = 80.5, colour = "black", size = 0.6)+
+annotate("segment", x = 0, xend = 0, y = 0, yend = 80, colour = "black", size = 0.6)+
+annotate("segment", x = 120, xend = 120, y = 0, yend = 80, colour = "black", size = 0.6)+
+theme(rect = element_blank(),
+line = element_blank()) +
+# add penalty spot right
+annotate("point", x = 108 , y = 40, colour = "black", size = 1.05) +
+annotate("path", colour = "black", size = 0.6,
+x=60+10*cos(seq(0,2*pi,length.out=2000)),
+y=40+10*sin(seq(0,2*pi,length.out=2000)))+
+# add centre spot
+annotate("point", x = 60 , y = 40, colour = "black", size = 1.05) +
+annotate("path", x=12+10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40+10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+annotate("path", x=107.84-10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40-10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+theme(axis.text.x=element_blank(),
+axis.title.x = element_blank(),
+axis.title.y = element_blank(),
+plot.caption=element_text(face="bold", colour = "black", size=24, hjust= 0.5, vjust= 15),
+plot.subtitle = element_text(size = 18,  hjust = 0.5),
+axis.text.y=element_blank(),
+legend.position = "top",
+legend.title=element_text(size=14),
+legend.text=element_text(size=14),
+legend.margin = margin(c(20, 10, -65, 50)),
+legend.key.size = unit(1.5, "cm"),
+plot.title = element_text(margin = margin(r = 10, b = 10), face="bold",size = 24, colour = "black", hjust = 0.5),
+legend.direction = "horizontal",
+axis.ticks=element_blank(),
+aspect.ratio = c(65/100),
+plot.background = element_rect(fill = "white"),
+strip.text.x = element_text(size=13)) +
+labs(caption = "USA\n Right Outswinging") +
+coord_flip(xlim = c(85, 125))
+dev.off()
+```
+
+```{r}
+#box with no ceternal line template 
+library(ggplot2)
+library(grid)
+
+tiff("/Users/joestone/Documents/r/r_projects/statsbomb/output/stra_l.png", units="in", width=10, height=10, res=1000)
+
+ggplot() +
+    #plots data 
+geom_curve(data = chart_stra_l, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y),
+lineend = "round", size = 0.6, curvature = 0.00, angle = 90, arrow = arrow(length = unit(0.08, "inches"))) +
+  
+annotate("rect",xmin = 0, xmax = 120, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 60, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 18, xmax = 0, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 102, xmax = 120, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 6, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 114, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 120.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = -0.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("segment", x = 60, xend = 60, y = -0.5, yend = 80.5, colour = "black", size = 0.6)+
+annotate("segment", x = 0, xend = 0, y = 0, yend = 80, colour = "black", size = 0.6)+
+annotate("segment", x = 120, xend = 120, y = 0, yend = 80, colour = "black", size = 0.6)+
+theme(rect = element_blank(),
+line = element_blank()) +
+# add penalty spot right
+annotate("point", x = 108 , y = 40, colour = "black", size = 1.05) +
+annotate("path", colour = "black", size = 0.6,
+x=60+10*cos(seq(0,2*pi,length.out=2000)),
+y=40+10*sin(seq(0,2*pi,length.out=2000)))+
+# add centre spot
+annotate("point", x = 60 , y = 40, colour = "black", size = 1.05) +
+annotate("path", x=12+10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40+10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+annotate("path", x=107.84-10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40-10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+theme(axis.text.x=element_blank(),
+axis.title.x = element_blank(),
+axis.title.y = element_blank(),
+plot.caption=element_text(face="bold", colour = "black", size=24, hjust= 0.5, vjust= 15),
+plot.subtitle = element_text(size = 18,  hjust = 0.5),
+axis.text.y=element_blank(),
+legend.position = "top",
+legend.title=element_text(size=14),
+legend.text=element_text(size=14),
+legend.margin = margin(c(20, 10, -65, 50)),
+legend.key.size = unit(1.5, "cm"),
+plot.title = element_text(margin = margin(r = 10, b = 10), face="bold",size = 24, colour = "black", hjust = 0.5),
+legend.direction = "horizontal",
+axis.ticks=element_blank(),
+aspect.ratio = c(65/100),
+plot.background = element_rect(fill = "white"),
+strip.text.x = element_text(size=13)) +
+labs(caption = "USA\n Left Straight") +
+coord_flip(xlim = c(85, 125))
+dev.off()
+```
+
+```{r}
+#box with no ceternal line template 
+library(ggplot2)
+library(grid)
+
+tiff("/Users/joestone/Documents/r/r_projects/statsbomb/output/stra_r.png", units="in", width=10, height=10, res=1000)
+
+ggplot() +
+    #plots data 
+geom_curve(data = chart_stra_r, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y),
+lineend = "round", size = 0.6, curvature = 0.00, angle = 90, arrow = arrow(length = unit(0.08, "inches"))) +
+  
+annotate("rect",xmin = 0, xmax = 120, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 60, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 18, xmax = 0, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 102, xmax = 120, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 6, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 114, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 120.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = -0.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("segment", x = 60, xend = 60, y = -0.5, yend = 80.5, colour = "black", size = 0.6)+
+annotate("segment", x = 0, xend = 0, y = 0, yend = 80, colour = "black", size = 0.6)+
+annotate("segment", x = 120, xend = 120, y = 0, yend = 80, colour = "black", size = 0.6)+
+theme(rect = element_blank(),
+line = element_blank()) +
+# add penalty spot right
+annotate("point", x = 108 , y = 40, colour = "black", size = 1.05) +
+annotate("path", colour = "black", size = 0.6,
+x=60+10*cos(seq(0,2*pi,length.out=2000)),
+y=40+10*sin(seq(0,2*pi,length.out=2000)))+
+# add centre spot
+annotate("point", x = 60 , y = 40, colour = "black", size = 1.05) +
+annotate("path", x=12+10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40+10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+annotate("path", x=107.84-10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40-10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+theme(axis.text.x=element_blank(),
+axis.title.x = element_blank(),
+axis.title.y = element_blank(),
+plot.caption=element_text(face="bold", colour = "black", size=24, hjust= 0.5, vjust= 15),
+plot.subtitle = element_text(size = 18,  hjust = 0.5),
+axis.text.y=element_blank(),
+legend.position = "top",
+legend.title=element_text(size=14),
+legend.text=element_text(size=14),
+legend.margin = margin(c(20, 10, -65, 50)),
+legend.key.size = unit(1.5, "cm"),
+plot.title = element_text(margin = margin(r = 10, b = 10), face="bold",size = 24, colour = "black", hjust = 0.5),
+legend.direction = "horizontal",
+axis.ticks=element_blank(),
+aspect.ratio = c(65/100),
+plot.background = element_rect(fill = "white"),
+strip.text.x = element_text(size=13)) +
+labs(caption = "USA\n Right Straight") +
+coord_flip(xlim = c(85, 125))
+dev.off()
+```
+
+```{r}
+chart_shot_l <- df_shot_row1_usa %>% filter(location.y == 0.1)
+chart_shot_r <- df_shot_row1_usa  %>% filter(location.y == 80.0)
+```
+
+```{r}
+#shots from corners  with tech
+library(ggplot2)
+library(grid)
+
+tiff("/Users/joestone/Documents/r/r_projects/statsbomb/output/shots.png", units="in", width=10, height=10, res=1000)
+
+ggplot() +
+    #plots data 
+geom_curve(data = chart_shot_r, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y),
+lineend = "round", size = 0.6, curvature = 0.00, angle = 90, arrow = arrow(length = unit(0.08, "inches"))) +
+  
+geom_curve(data = chart_shot_l, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y),
+lineend = "round", size = 0.6, curvature = 0.00, angle = 90, arrow = arrow(length = unit(0.08, "inches"))) +
+  
+annotate("rect",xmin = 0, xmax = 120, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 60, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 18, xmax = 0, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 102, xmax = 120, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 6, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 114, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 120.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = -0.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("segment", x = 60, xend = 60, y = -0.5, yend = 80.5, colour = "black", size = 0.6)+
+annotate("segment", x = 0, xend = 0, y = 0, yend = 80, colour = "black", size = 0.6)+
+annotate("segment", x = 120, xend = 120, y = 0, yend = 80, colour = "black", size = 0.6)+
+theme(rect = element_blank(),
+line = element_blank()) +
+# add penalty spot right
+annotate("point", x = 108 , y = 40, colour = "black", size = 1.05) +
+annotate("path", colour = "black", size = 0.6,
+x=60+10*cos(seq(0,2*pi,length.out=2000)),
+y=40+10*sin(seq(0,2*pi,length.out=2000)))+
+# add centre spot
+annotate("point", x = 60 , y = 40, colour = "black", size = 1.05) +
+annotate("path", x=12+10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40+10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+annotate("path", x=107.84-10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40-10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+theme(axis.text.x=element_blank(),
+axis.title.x = element_blank(),
+axis.title.y = element_blank(),
+plot.caption=element_text(face="bold", colour = "black", size=24, hjust= 0.5, vjust= 15),
+plot.subtitle = element_text(size = 18,  hjust = 0.5),
+axis.text.y=element_blank(),
+legend.position = "top",
+legend.title=element_text(size=14),
+legend.text=element_text(size=14),
+legend.margin = margin(c(20, 10, -65, 50)),
+legend.key.size = unit(1.5, "cm"),
+plot.title = element_text(margin = margin(r = 10, b = 10), face="bold",size = 24, colour = "black", hjust = 0.5),
+legend.direction = "horizontal",
+axis.ticks=element_blank(),
+aspect.ratio = c(65/100),
+plot.background = element_rect(fill = "white"),
+strip.text.x = element_text(size=13)) +
+labs(caption = "USA\n Shots from Corners") +
+coord_flip(xlim = c(85, 125))
+dev.off()
+```
+
+```{r}
+#shots from corners with tech
+library(ggplot2)
+library(grid)
+
+tiff("/Users/joestone/Documents/r/r_projects/statsbomb/output/shots_outcomecolour.png", units="in", width=10, height=10, res=1000)
+
+ggplot() +
+    #plots data 
+geom_curve(data = chart_shot_r, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y, color = pass.technique.name),
+lineend = "round", size = 0.6, curvature = 0.00, angle = 90, arrow = arrow(length = unit(0.08, "inches"))) +
+  
+geom_curve(data = chart_shot_l, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y, color = pass.technique.name),
+lineend = "round", size = 0.6, curvature = 0.00, angle = 90, arrow = arrow(length = unit(0.08, "inches"))) +
+  
+annotate("rect",xmin = 0, xmax = 120, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 60, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 18, xmax = 0, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 102, xmax = 120, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 6, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 114, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 120.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = -0.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("segment", x = 60, xend = 60, y = -0.5, yend = 80.5, colour = "black", size = 0.6)+
+annotate("segment", x = 0, xend = 0, y = 0, yend = 80, colour = "black", size = 0.6)+
+annotate("segment", x = 120, xend = 120, y = 0, yend = 80, colour = "black", size = 0.6)+
+theme(rect = element_blank(),
+line = element_blank()) +
+# add penalty spot right
+annotate("point", x = 108 , y = 40, colour = "black", size = 1.05) +
+annotate("path", colour = "black", size = 0.6,
+x=60+10*cos(seq(0,2*pi,length.out=2000)),
+y=40+10*sin(seq(0,2*pi,length.out=2000)))+
+# add centre spot
+annotate("point", x = 60 , y = 40, colour = "black", size = 1.05) +
+annotate("path", x=12+10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40+10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+annotate("path", x=107.84-10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40-10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+theme(axis.text.x=element_blank(),
+axis.title.x = element_blank(),
+axis.title.y = element_blank(),
+plot.caption=element_text(face="bold", colour = "black", size=24, hjust= 0.5, vjust= 15),
+plot.subtitle = element_text(size = 18,  hjust = 0.5),
+axis.text.y=element_blank(),
+legend.position = "top",
+legend.title=element_text(size=14),
+legend.text=element_text(size=14),
+legend.margin = margin(c(20, 10, -65, 50)),
+legend.key.size = unit(1.5, "cm"),
+plot.title = element_text(margin = margin(r = 10, b = 10), face="bold",size = 24, colour = "black", hjust = 0.5),
+legend.direction = "horizontal",
+axis.ticks=element_blank(),
+aspect.ratio = c(65/100),
+plot.background = element_rect(fill = "white"),
+strip.text.x = element_text(size=13)) +
+labs(caption = "USA\n Shots from Corners") +
+coord_flip(xlim = c(85, 125))
+dev.off()
+```
+
+##Corners resulting in shots with outcome
+
+##Create a Shot Outcome df for corners 
+
+Here we are creating a df, which matches each corner action with the shot outcome of that corner
+
+```{r}
+corner_action <-df_shot_row1_usa %>% select("location.x", "location.y", "pass.end_location.x", "pass.end_location.y") #corner action
+```
+
+```{r}
+df_shot_only <- df_shot_full_usa %>% filter(type.name=="Shot")
+```
+
+```{r}
+df_shot_only <- df_shot_only %>% select("setpiece.id", "shot.outcome.name", "shot.statsbomb_xg")
+```
+
+```{r}
+df_shot_only <-df_shot_only %>% distinct(setpiece.id, .keep_all = TRUE)
+```
+
+```{r}
+corner_outcome <- cbind(corner_action , df_shot_only)
+```
+
+```{r}
+#shots from corners outcome with varyinf colours 
+library(ggplot2)
+library(grid)
+
+tiff("/Users/joestone/Documents/r/r_projects/statsbomb/output/shots_outcomecolour.png", units="in", width=10, height=10, res=1000)
+
+ggplot() +
+    #plots data 
+geom_curve(data = corner_outcome, aes(x = location.x, y = location.y, xend = pass.end_location.x, yend = pass.end_location.y, color = shot.outcome.name),
+lineend = "round", size = 0.6, curvature = 0.00, angle = 90, arrow = arrow(length = unit(0.08, "inches"))) +
+  
+annotate("rect",xmin = 0, xmax = 120, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 60, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 18, xmax = 0, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 102, xmax = 120, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = 6, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 114, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 120, xmax = 120.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("rect",xmin = 0, xmax = -0.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) +
+annotate("segment", x = 60, xend = 60, y = -0.5, yend = 80.5, colour = "black", size = 0.6)+
+annotate("segment", x = 0, xend = 0, y = 0, yend = 80, colour = "black", size = 0.6)+
+annotate("segment", x = 120, xend = 120, y = 0, yend = 80, colour = "black", size = 0.6)+
+theme(rect = element_blank(),
+line = element_blank()) +
+# add penalty spot right
+annotate("point", x = 108 , y = 40, colour = "black", size = 1.05) +
+annotate("path", colour = "black", size = 0.6,
+x=60+10*cos(seq(0,2*pi,length.out=2000)),
+y=40+10*sin(seq(0,2*pi,length.out=2000)))+
+# add centre spot
+annotate("point", x = 60 , y = 40, colour = "black", size = 1.05) +
+annotate("path", x=12+10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40+10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+annotate("path", x=107.84-10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6,
+y=40-10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+theme(axis.text.x=element_blank(),
+axis.title.x = element_blank(),
+axis.title.y = element_blank(),
+plot.caption=element_text(face="bold", colour = "black", size=24, hjust= 0.5, vjust= 15),
+plot.subtitle = element_text(size = 18,  hjust = 0.5),
+axis.text.y=element_blank(),
+legend.position = "top",
+legend.title=element_text(size=0),
+legend.text=element_text(size=14),
+legend.margin = margin(c(20, 10, -65, 50)),
+legend.key.size = unit(1.5, "cm"),
+plot.title = element_text(margin = margin(r = 10, b = 10), face="bold",size = 24, colour = "black", hjust = 0.5),
+legend.direction = "horizontal",
+axis.ticks=element_blank(),
+aspect.ratio = c(65/100),
+plot.background = element_rect(fill = "white"),
+strip.text.x = element_text(size=13)) +
+labs(caption = "USA\n Shot Outcome from Corners") +
+coord_flip(xlim = c(85, 125))
+dev.off()
+```
+
+##360 data
+
+## Clean the df and adding columns of data for analysis
+
+```{r}
+#The sub-set pattern of play, corner creating a dataframe (df)
+df <-subset(df, play_pattern.name=="From Corner")
+```
+
+```{r}
+#adds a specific id for each corner
+df$setpiece.id <- paste(df$match_id, df$possession, sep = "")
+```
+
+```{r}
+#Refine the data frame for passes and remove some columns- important to stop duplicates
+df = df %>%
+group_by(team.name) %>%
+select(setpiece.id, id, match_id, team.name, OpposingTeam, player.name, type.name, minute, second, location.x, location.y, pass.end_location.x, pass.end_location.y, pass.type.name, pass.cross, freeze_frame) 
+```
+
+```{r}
+# this code unnests the player locations in the freeze_fame info
+df = df %>% unnest(freeze_frame) %>%
+mutate(ff_location.x = (map(location, 1)), ff_location.y = (map(location, 2))) %>%
+select(-location) %>%
+mutate(ff_location.x = as.numeric(ifelse(ff_location.x == "NULL", NA, ff_location.x)), ff_location.y = as.numeric(ifelse(ff_location.y == "NULL", NA, ff_location.y)))
+```
+
+```{r}
+df_3893808124 <-  df %>% filter (setpiece.id == 3893808124)
+```
+
+```{r}
+chart = df_3893808124  %>%
+filter(id=="0e913ee4-3e86-4067-94bc-e9326a930b89") %>%
+mutate(Player_Type_Key = case_when(actor==TRUE & teammate==TRUE ~ "Corner Taker",
+teammate==TRUE ~ "Teammate",
+teammate==FALSE & keeper==FALSE ~ "Opponent",
+keeper==TRUE & teammate==FALSE ~ "Goalkeeper"))
+```
+
+```{r}
+df_3893808124$ida <- paste(df_3893808124$minute, df_3893808124$second, df_3893808124$id, sep = "") 
+```
+
+```{r}
+chart_3 = df_3893808124 %>%
+mutate(Player_Type_Key = case_when(actor==TRUE & teammate==TRUE ~ "Player with Ball",
+teammate==TRUE ~ "Teammate",
+teammate==FALSE & keeper==FALSE ~ "Opponent",
+keeper==TRUE & teammate==FALSE ~ "Goalkeeper"))
+```
+
+```{r}
+#box with no ceternal line template 
+library(ggplot2)
+library(grid)
+
+tiff("/Users/joestone/Documents/r/r_projects/statsbomb/output/fri eve.png", units="in", width=10, height=10, res=1000)
+ 
+ggplot() +
+  
+   #creates pitch
+annotate("rect",xmin = 60, xmax = 120, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) + 
+annotate("rect",xmin = 102, xmax = 120, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) + 
+annotate("rect",xmin = 120, xmax = 114, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) + 
+annotate("rect",xmin = 120, xmax = 120.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) + 
+annotate("segment", x = 60, xend = 60, y = -0.5, yend = 80.5, colour = "black", size = 0.6) + 
+annotate("segment", x = 120, xend = 120, y = 0, yend = 80, colour = "black", size = 0.6) +
+theme(rect = element_blank(), line = element_blank()) +
+annotate("point", x = 108 , y = 40, colour = "black", size = 1.05) + 
+annotate("path", colour = "black", size = 0.6,
+x=60+10*cos(seq(0,2*pi,length.out=2000)),
+y=40+10*sin(seq(0,2*pi,length.out=2000)))+
+  
+annotate("point", x = 60 , y = 40, colour = "black", size = 1.05) + 
+annotate("path", x=108-10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6, y=40-10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+  
+  geom_point(data = chart_3, aes(x = ff_location.x, y = ff_location.y, fill=Player_Type_Key),
+size = 2, alpha = 0.8, shape=21) +
+theme(axis.text.x=element_blank(),
+axis.title.x = element_blank(),
+axis.title.y = element_blank(),
+plot.caption=element_text(size=13, hjust=0.5, vjust=0.5),
+plot.subtitle = element_text(size = 18,  hjust = 0.5),
+axis.text.y=element_blank(),
+legend.position = "bottom",
+plot.title = element_text(margin = margin(r = 10, b = 10), face="bold",size = 24, colour = "black", hjust = 0.5),
+legend.direction = "horizontal",
+axis.ticks=element_blank(),
+aspect.ratio = c(65/100),
+plot.background = element_rect(fill = "white"),
+strip.text.x = element_text(size=0)) +
+labs(title = "GOAL", subtitle = "3893808124", caption = "") +
+     facet_wrap(~ida, ncol = 4) +
+coord_flip(xlim = c(85, 125))
+dev.off
+```
+
+```{r}
+df_389379293 <-  df %>% filter (setpiece.id == 389379293)
+```
+
+```{r}
+df_389379293$ida <- paste(df_389379293$minute, df_389379293$second, df_389379293$id, sep = "") 
+```
+
+```{r}
+chart_4 = df_389379293 %>%
+mutate(Player_Type_Key = case_when(actor==TRUE & teammate==TRUE ~ "Player with Ball",
+teammate==TRUE ~ "Teammate",
+teammate==FALSE & keeper==FALSE ~ "Opponent",
+keeper==TRUE & teammate==FALSE ~ "Goalkeeper"))
+```
+
+```{r}
+#box with no ceternal line template 
+library(ggplot2)
+library(grid)
+
+tiff("/Users/joestone/Documents/r/r_projects/statsbomb/output/usanew360.png", units="in", width=20, height=5, res=1000)
+ 
+ggplot() +
+  
+   #creates pitch
+annotate("rect",xmin = 60, xmax = 120, ymin = 0, ymax = 80, fill = NA, colour = "black", size = 0.6) + 
+annotate("rect",xmin = 102, xmax = 120, ymin = 18, ymax = 62, fill = NA, colour = "black", size = 0.6) + 
+annotate("rect",xmin = 120, xmax = 114, ymin = 30, ymax = 50, fill = NA, colour = "black", size = 0.6) + 
+annotate("rect",xmin = 120, xmax = 120.5, ymin =36, ymax = 44, fill = NA, colour = "black", size = 0.6) + 
+annotate("segment", x = 60, xend = 60, y = -0.5, yend = 80.5, colour = "black", size = 0.6) + 
+annotate("segment", x = 120, xend = 120, y = 0, yend = 80, colour = "black", size = 0.6) +
+theme(rect = element_blank(), line = element_blank()) +
+annotate("point", x = 108 , y = 40, colour = "black", size = 1.05) + 
+annotate("path", colour = "black", size = 0.6,
+x=60+10*cos(seq(0,2*pi,length.out=2000)),
+y=40+10*sin(seq(0,2*pi,length.out=2000)))+
+  
+annotate("point", x = 60 , y = 40, colour = "black", size = 1.05) + 
+annotate("path", x=108-10*cos(seq(-0.3*pi,0.3*pi,length.out=30)), size = 0.6, y=40-10*sin(seq(-0.3*pi,0.3*pi,length.out=30)), col="black") +
+  
+  geom_point(data = chart_4, aes(x = ff_location.x, y = ff_location.y, fill=Player_Type_Key),
+size = 2, alpha = 0.8, shape=21) +
+theme(axis.text.x=element_blank(),
+axis.title.x = element_blank(),
+axis.title.y = element_blank(),
+plot.caption=element_text(size=13, hjust=0.5, vjust=0.5),
+plot.subtitle = element_text(size = 18,  hjust = 0.5),
+axis.text.y=element_blank(),
+legend.position = "bottom",
+plot.title = element_text(margin = margin(r = 10, b = 10), face="bold",size = 24, colour = "black", hjust = 0.5),
+legend.direction = "horizontal",
+axis.ticks=element_blank(),
+aspect.ratio = c(65/100),
+plot.background = element_rect(fill = "white"),
+strip.text.x = element_text(size=0)) +
+labs(title = "GOAL", subtitle = "3893808124", caption = "") +
+     facet_wrap(~ida, ncol = 15) + #LOOK FOR CODE TO ADD TYPE.NAME LABEL
+coord_flip(xlim = c(85, 125))
+dev.off
+```
+
+##END
